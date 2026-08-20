@@ -1,0 +1,79 @@
+# Task lists sized to finish on one RTX 3070 (8GB).
+# Heavy tasks are off by default; pass --include-heavy to enable them.
+# Malay STS does not exist in MTEB; drop a folder into data/sts/ later.
+
+k_values: [10, 30]
+include_heavy: false
+
+languages:
+  eng:
+    retrieval:
+      - name: FiQA2018
+        domain: financial
+        heavy: false
+      - name: LegalBenchConsumerContractsQA
+        domain: legal
+        heavy: false
+      - name: CQADupstackProgrammersRetrieval
+        domain: programming
+        heavy: false
+      - name: SciFact
+        domain: written
+        heavy: false
+    sts:
+      - name: STSBenchmark
+        heavy: false
+      - name: SICK-R
+        heavy: false
+      - name: STS17
+        languages: [eng]
+        heavy: false
+    iso: eng
+
+  cmn:
+    retrieval:
+      - name: CovidRetrieval
+        heavy: false
+      - name: EcomRetrieval
+        heavy: false
+      - name: MedicalRetrieval
+        heavy: false
+      - name: VideoRetrieval
+        heavy: false
+      - name: T2Retrieval
+        heavy: true
+      - name: DuRetrieval
+        heavy: true
+      - name: MMarcoRetrieval
+        heavy: true
+    sts:
+      - name: ATEC
+        heavy: false
+      - name: BQ
+        heavy: false
+      - name: LCQMC
+        heavy: false
+      - name: PAWSX
+        heavy: false
+      - name: STSB
+        heavy: false
+      - name: AFQMC
+        heavy: false
+      - name: QBQTC
+        heavy: false
+    iso: cmn
+
+  zsm:
+    retrieval:
+      - name: BelebeleRetrieval
+        languages: [zsm]
+        heavy: false
+      - name: WebFAQRetrieval
+        languages: [msa]
+        heavy: false
+      - name: MKQARetrieval
+        languages: [msa]
+        heavy: true
+    sts: []   # none in MTEB. Drop data/sts/<name>/ to fill this slot.
+    iso: [zsm, msa, zlm]
+    note: "No Malay STS in MTEB 2.19.5. local_source scans data/sts/ for a drop-in set."

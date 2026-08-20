@@ -1,0 +1,14 @@
+---
+description: Current MTEB API usage, instruction-aware loaders, and custom-task revision cache keys.
+globs: src/**/*.py,configs/**
+alwaysApply: false
+---
+
+# MTEB usage
+
+- Use `mteb.evaluate(model, tasks=...)`. `MTEB(...).run` is deprecated.
+- Load instruction-aware models with `mteb.get_model(hf_name)`: `microsoft/harrier-oss-v1-0.6b`, `Qwen/Qwen3-Embedding-0.6B`, and `voyageai/voyage-4-nano`. Do not wrap them in a hand-rolled Instruct template. Voyage’s registered wrapper uses `encode_query` / `encode_document` (and `trust_remote_code=True`).
+- Custom / local tasks wrap `AbsTaskSTS` or `AbsTaskRetrieval` and override `load_data`. Required `TaskMetadata` fields: `name`, `description`, `type`, `eval_langs`, `eval_splits`, `main_score`, `dataset={"path": ..., "revision": ...}`.
+- `revision` in a local `meta.yaml` is the result-cache key. Bump it whenever the data files change, or stale scores will be reused.
+- Retrieval `self.dataset` is nested `{subset: {split: RetrievalSplitData(...)}}`. STS `self.dataset` is a `DatasetDict` keyed by split only.
+- Pin `max_seq_length` from `configs/models.yaml` (512). Do not let 32k-context models encode at native length.

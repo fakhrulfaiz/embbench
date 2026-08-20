@@ -1,0 +1,26 @@
+---
+description: HuggingFace caches must live on /mnt/c; install only via uv into .venv.
+alwaysApply: true
+---
+
+# HuggingFace cache and installs
+
+Never write to `~/.cache/huggingface`. All Hub weights and datasets go to the Windows drive:
+
+```
+HF_HOME=/mnt/c/ml-cache/huggingface
+HF_HUB_CACHE=/mnt/c/ml-cache/huggingface/hub
+HF_DATASETS_CACHE=/mnt/c/ml-cache/huggingface/datasets
+HF_HUB_DISABLE_SYMLINKS_WARNING=1
+```
+
+`src/embbench/core/config.py` hard-fails if `HF_HOME` is not under `/mnt/c`. Do not weaken that guard. Do not set these vars to a WSL ext4 path as a "faster" workaround.
+
+Job outputs (`results/`), MTEB result cache, and Qdrant storage stay on WSL ext4.
+
+Install only with `uv` into `.venv`. Never `pip install --user` or a global `pip install`.
+
+```bash
+uv sync
+uv run embbench ...
+```

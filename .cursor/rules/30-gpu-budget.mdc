@@ -1,0 +1,15 @@
+---
+description: RTX 3070 8GB budget. One model resident. One subprocess per model.
+globs: src/**/*.py
+alwaysApply: false
+---
+
+# GPU budget (RTX 3070, 8GB)
+
+Never more than one embedding model resident on the GPU.
+
+- Orchestrator (`run --all`) spawns **one subprocess per model** and waits for exit before the next. Do not load a second model in the same process to compare embeddings.
+- Inside a process, tasks run sequentially. Call `torch.cuda.reset_peak_memory_stats()` before each task and `torch.cuda.empty_cache()` after.
+- Use fp16 (`dtype: float16` in `configs/models.yaml`). Honor `max_seq_length` and `batch_size` from the model config.
+- Do not run two evals concurrently. Do not start the API worker alongside a CLI run that uses the GPU.
+- If a model OOMs, record the failure in the job manifest and continue to the next model (fail-soft). Do not retry with a larger batch.

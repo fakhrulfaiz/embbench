@@ -1,0 +1,28 @@
+---
+description: Project scope, models, languages, and what this harness does (and does not) do.
+alwaysApply: true
+---
+
+# Embedding Benchmark Harness
+
+Service-shaped harness for **retrieval (nDCG@k, Recall@k)** and **STS**. Public MTEB tasks now; any future dataset is a folder drop into `data/sts/` or `data/retrieval/`.
+
+## Models (run one at a time)
+
+| id | hf_name | role |
+|---|---|---|
+| bce-embedding-base_v1 | maidalun1020/bce-embedding-base_v1 | baseline |
+| voyage-4-nano | voyageai/voyage-4-nano | predicted winner (`trust_remote_code=True`) |
+| harrier-oss-v1-0.6b | microsoft/harrier-oss-v1-0.6b | backup (load via `mteb.get_model`) |
+| Qwen3-Embedding-0.6B | Qwen/Qwen3-Embedding-0.6B | popular reference |
+| bge-m3 | BAAI/bge-m3 | dense-only; hybrid is a later check |
+
+## Languages
+
+- EN (`eng`): retrieval + STS from public MTEB.
+- ZH (`cmn`): retrieval + STS from C-MTEB.
+- MS (`zsm`/`msa`): retrieval only. **MTEB has no Malay STS.** Drop `data/sts/<name>/` later.
+
+## Non-goals this phase
+
+Do not implement document ingestion, chunking, Malay synthesis, translation Docker, or bge-m3 hybrid (sparse + ColBERT). Those become drop-in datasets or extra `VectorBackend`s.

@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# Run outputs stay local: ~1GB per full run, and they are reproducible.
+# Keep the directory itself so a fresh clone has somewhere to write.
+results/*
+!results/.gitkeep
+
+.mteb/
+*.log
+.DS_Store
+qdrant_storage/
+.ipynb_checkpoints/
+dist/
+build/
