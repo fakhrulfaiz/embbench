@@ -9,6 +9,7 @@ alwaysApply: false
 `run_job(JobSpec) -> JobResult` in `evaluation/runner.py` is the only execution path. The CLI and the FastAPI stub are thin adapters that build a `JobSpec`. Never call `mteb.evaluate` from a command, route, or notebook.
 
 - **Scoring path:** exact numpy / in-memory backend. nDCG and Recall must not go through Qdrant. ANN recall loss must not mix into model quality.
-- **Serving path:** Qdrant only for p95 latency, index build time, index size, and ANN-vs-exact recall delta.
+- **Model serving:** `loader: openai_api` calls a vLLM (or OpenAI-compatible) embeddings HTTP server. That server is not this repo; do not load the same weights in-process.
+- **Index serving:** Qdrant only for p95 latency, index build time, index size, and ANN-vs-exact recall delta.
 - Adding a dataset is creating a folder under `data/sts/<name>/` or `data/retrieval/<name>/`. Do not add a registry entry or a new Python module per dataset.
 - New serving stores implement `VectorBackend` (`upsert` / `search` / `stats` / `drop`). Do not fork the runner.

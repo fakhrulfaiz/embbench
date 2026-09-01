@@ -3,12 +3,15 @@
 Instruction-aware models go through `mteb.get_model` so Harrier/Qwen keep their
 per-task prompt dictionaries. Voyage uses the same MTEB SentenceTransformer
 wrapper (encode_query / encode_document). BCE/BGE use raw SentenceTransformer.
+`openai_api` is an HTTP client to a vLLM (or OpenAI-compatible) embeddings
+server; this process does not load those weights onto the GPU.
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from embbench.core.config import get_settings
 from embbench.core.registry import ModelConfig
 
 
@@ -18,8 +21,16 @@ class Encoder(Protocol):
 
 
 def load_encoder(config: ModelConfig) -> Encoder:
-    """Load exactly one encoder. Caller owns GPU lifetime (one process per model)."""
+    """Load exactly one encoder. Caller owns GPU lifetime (one process per model).
+
+    `openai_api` does not occupy the GPU; the embeddings server does.
+    """
     encode_kwargs = {"batch_size": config.batch_size}
+    if config.loader == "openai_api":
+        model = _load_openai_api_model(config)
+        model._embbench_encode_kwargs = encode_kwargs
+        return model
+
     if config.trust_remote_code:
         _patch_remote_code_config_class()
         _patch_create_causal_mask_alias()
@@ -54,11 +65,41 @@ def load_encoder(config: ModelConfig) -> Encoder:
     return model
 
 
+def _openai_wrapper_cls():
+    try:
+        from mteb.models import OpenAIAPIEncodeWrapper
+    except ImportError:
+        try:
+            from mteb.models.openai_wrappers import OpenAIAPIEncodeWrapper
+        except ImportError as exc:
+            raise RuntimeError(
+                "This mteb install has no OpenAIAPIEncodeWrapper. Upgrade mteb "
+                "to use loader: openai_api (vLLM / OpenAI-compatible /v1/embeddings)."
+            ) from exc
+    return OpenAIAPIEncodeWrapper
+
+
+def _load_openai_api_model(config: ModelConfig):
+    """HTTP client to a pooling server. Weights stay in vLLM (or the remote API)."""
+    settings = get_settings()
+    endpoint = config.endpoint_url or settings.embeddings_url
+    api_key = config.api_key or settings.embeddings_api_key or None
+    kwargs: dict[str, Any] = {
+        "endpoint_url": endpoint.rstrip("/"),
+        "model_name": config.hf_name,
+        "api_key": api_key,
+        "max_length": config.max_seq_length,
+        "use_chat_template": config.use_chat_template,
+        "modalities": ["text"],
+    }
+    if config.use_instructions and config.instruction_template:
+        kwargs["use_instructions"] = True
+        kwargs["instruction_template"] = config.instruction_template
+    return _openai_wrapper_cls()(**kwargs)
+
+
 def _load_mteb_model(config: ModelConfig):
     """Use MTEB's registered wrapper so query/document prompts are applied.
-
-    Some open-weight models (voyage-4-nano) are gated on an API extra we do not
-    need. Fall back to the same SentenceTransformerEncoderWrapper MTEB would use.
     """
     import mteb
 
@@ -76,11 +117,6 @@ def _load_mteb_model(config: ModelConfig):
 
 
 def _patch_remote_code_config_class() -> None:
-    """Transformers 5 crashes on remote models whose `config_class` is None.
-
-    Voyage-4-nano's Qwen3BidirectionalModel inherits PreTrainedModel.config_class
-    as None. AutoModel.register then does `None.__name__`. Fill it in before the check.
-    """
     from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
     if getattr(_BaseAutoModelClass.register, "_embbench_patched", False):

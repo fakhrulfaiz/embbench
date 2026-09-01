@@ -2,9 +2,9 @@
 
 Adding a model is a `configs/models.yaml` entry. No Python edit, unless the model ships broken custom code (see [Custom Hub code](#5-custom-hub-code-trust_remote_code)).
 
-The only real decision is **which loader**, and the CLI answers it for you.
+The only real decision is **which loader**, and the CLI answers it for you (except vLLM: that is `loader: openai_api`).
 
-## 1. Ask the harness
+## 1. Ask the CLI
 
 ```bash
 uv run embbench check-model intfloat/multilingual-e5-large
@@ -14,11 +14,11 @@ It reports whether MTEB knows the model, prints its wrapper, dimensions, and fla
 
 ## 2. Pick the loader
 
-| | `loader: mteb` | `loader: sentence_transformers` |
-|---|---|---|
-| When | MTEB has the model registered | It does not |
-| How it encodes | MTEB's own wrapper, with the model's query/document prompts | plain `SentenceTransformer.encode()` |
-| Use for | instruction-aware models | plain bi-encoders |
+| | `loader: mteb` | `loader: sentence_transformers` | `loader: openai_api` |
+|---|---|---|---|
+| When | MTEB has the model registered | It does not | Weights are already served (vLLM pooling or OpenAI-compatible `/v1/embeddings`) |
+| How it encodes | MTEB's own wrapper, with the model's query/document prompts | plain `SentenceTransformer.encode()` | HTTP client; this process does not load the GPU |
+| Use for | instruction-aware models | plain bi-encoders | production-style serving, models too large to load here |
 
 **This choice changes the score, not just the plumbing.** Instruction-aware models are trained with a prefix on each side:
 
@@ -61,8 +61,10 @@ def load_encoder(config: ModelConfig) -> Encoder:
 |---|---|
 | `id` | What you pass to `--model` and what appears in every report |
 | `role` | Free text. `baseline` is special: the dashboard measures every other model against it, so exactly one model should carry it |
-| `loader` | `mteb` or `sentence_transformers` |
-| `trust_remote_code` | Required if the repo ships its own modeling `.py` |
+| `loader` | `mteb`, `sentence_transformers`, or `openai_api` |
+| `endpoint_url` | `openai_api` only. Defaults to `EMBBENCH_EMBEDDINGS_URL` |
+| `use_chat_template` | `openai_api` only. `false` for pooling models with no chat template (bge-m3, BCE). `true` only for chat/VLM embedders |
+| `trust_remote_code` | Required if the repo ships its own modeling `.py` (local loaders) |
 | `use_instructions` | Documentation only; the wrapper decides the actual prompting |
 | `batch_size` | Lower this first when you hit OOM |
 | `max_seq_length` | 512 across the board so models are compared on equal footing |
@@ -128,7 +130,43 @@ def _load_mteb_model(config: ModelConfig):
 
 `check-model` flags this before you run.
 
-## 7. Fitting an 8GB card
+## 7. Serve with vLLM (`loader: openai_api`)
+
+This repo scores. vLLM (or another OpenAI-compatible server) holds the weights.
+
+```bash
+vllm serve BAAI/bge-m3 --runner pooling --port 8000
+```
+
+```yaml
+  - id: bge-m3-vllm
+    hf_name: BAAI/bge-m3
+    role: candidate
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8000
+    use_chat_template: false
+    use_instructions: false
+    max_seq_length: 512
+    batch_size: 16
+    description: Same dense model as bge-m3, encoded through vLLM.
+```
+
+`hf_name` is the model id the server advertises (`/v1/models`). Pin `--max-model-len` (or equivalent) to 512 on the server so truncation matches the local runs.
+
+Do not add this row to a `--model all` run that also loads Voyage/Harrier in-process on the same GPU. Run the vLLM model alone:
+
+```bash
+uv run embbench run \
+  --model bge-m3-vllm \
+  --languages eng --task-types Retrieval \
+  --no-include-mteb --task-names SciFact
+```
+
+Plain pooling embedders (BCE, bge-m3) match local `encode()`. Instruction models (Voyage, Harrier, Qwen3) need query vs document prefixes; a raw `/v1/embeddings` call will not apply MTEB's local wrapper. Set `instruction_template` (must contain `{instruction}`) and `use_instructions: true` only if the served model expects that template. Otherwise prefer `loader: mteb` in-process for those three.
+
+`--profile-ops` still expects a local `encode(list[str])`. HTTP models may skip or fail that step; nDCG still comes from `mteb.evaluate`.
+
+## 8. Fitting an 8GB card
 
 One model per subprocess, so only one set of weights is resident at a time. When a model still will not fit:
 
@@ -150,4 +188,6 @@ A job that dies with CUDA OOM is recorded as `failed` and the orchestrator conti
 | `'NoneType' object has no attribute '__name__'` | Needs `trust_remote_code: true` |
 | `create_causal_mask() got an unexpected keyword` | Hub code predates Transformers 5; see section 5 |
 | CUDA out of memory on load | Model does not fit at 8GB; lower `batch_size` or skip it |
+| `openai_api` connection refused | vLLM is not up, or `endpoint_url` / `EMBBENCH_EMBEDDINGS_URL` is wrong |
+| vLLM 400 about chat template | Set `use_chat_template: false` for non-chat pooling models |
 | Model skipped on `run --model all` | It already completed at this scope; pass `--force` |

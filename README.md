@@ -77,7 +77,7 @@ Prediction files run to hundreds of megabytes per model, so the drill-down lists
 
 ## Add a dataset
 
-Drop a folder into `data/`. The harness wraps it as an MTEB task and scores it exactly like public FiQA or STSBenchmark. No Python edits, no `configs/tasks.yaml` change.
+Drop a folder into `data/`. The harness wraps it as an MTEB task and scores it exactly like public FiQA or STSBenchmark. No Python edits, no `configs/tasks.yaml` change. Generation-service Postgres (documents, chunks, questions, STS pairs): [docs/dataset-store.md](docs/dataset-store.md).
 
 | Kind | Folder | Files | Measures |
 |---|---|---|---|
@@ -115,8 +115,11 @@ It reports whether MTEB has the model registered and prints a ready-to-use confi
 |---|---|---|
 | Yes | `loader: mteb` | Keeps the model's own query and document prompts |
 | No | `loader: sentence_transformers` | Plain `encode()` |
+| Served by vLLM | `loader: openai_api` | HTTP to `/v1/embeddings`; this process does not load the GPU |
 
 This is not cosmetic. Instruction-aware models (Voyage, Harrier, Qwen3) are trained with a prefix on queries and documents. MTEB's wrapper applies them; a plain `encode()` does not, and reports a score below the model's real quality. `check-model` also warns about the two traps we hit: a vendor API extra that local weights do not need, and Hub code written for an older Transformers.
+
+vLLM pooling: [docs/adding-models.md](docs/adding-models.md#7-serve-with-vllm-loader-openai_api).
 
 Then smoke it on one task before committing to the full run:
 

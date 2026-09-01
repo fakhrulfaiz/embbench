@@ -15,13 +15,17 @@ class ModelConfig(BaseModel):
     id: str
     hf_name: str
     role: str
-    loader: Literal["mteb", "sentence_transformers"] = "sentence_transformers"
+    loader: Literal["mteb", "sentence_transformers", "openai_api"] = "sentence_transformers"
     trust_remote_code: bool = False
     use_instructions: bool = False
     max_seq_length: int = 512
     batch_size: int = 16
     description: str = ""
     dtype: str = "float16"
+    endpoint_url: str | None = None
+    api_key: str | None = None
+    use_chat_template: bool = False
+    instruction_template: str | None = None
 
 
 class ModelsFile(BaseModel):

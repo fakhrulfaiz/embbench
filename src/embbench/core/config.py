@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     mteb_cache: Path = Field(alias="MTEB_CACHE")
     qdrant_url: str = Field(default="http://127.0.0.1:6333", alias="QDRANT_URL")
     qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
+    embeddings_url: str = Field(
+        default="http://127.0.0.1:8000", alias="EMBBENCH_EMBEDDINGS_URL"
+    )
+    embeddings_api_key: str | None = Field(default=None, alias="EMBBENCH_EMBEDDINGS_API_KEY")
     results_dir: Path = Field(alias="EMBBENCH_RESULTS_DIR")
     data_dir: Path = Field(alias="EMBBENCH_DATA_DIR")
     configs_dir: Path = Field(alias="EMBBENCH_CONFIGS_DIR")

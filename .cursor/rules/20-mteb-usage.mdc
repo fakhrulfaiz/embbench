@@ -8,6 +8,7 @@ alwaysApply: false
 
 - Use `mteb.evaluate(model, tasks=...)`. `MTEB(...).run` is deprecated.
 - Load instruction-aware models with `mteb.get_model(hf_name)`: `microsoft/harrier-oss-v1-0.6b`, `Qwen/Qwen3-Embedding-0.6B`, and `voyageai/voyage-4-nano`. Do not wrap them in a hand-rolled Instruct template. Voyage’s registered wrapper uses `encode_query` / `encode_document` (and `trust_remote_code=True`).
+- Models served by vLLM (or any OpenAI-compatible `/v1/embeddings` server) use `loader: openai_api` and MTEB’s `OpenAIAPIEncodeWrapper`. This process is an HTTP client; do not also `mteb.get_model` those weights onto the same GPU.
 - Custom / local tasks wrap `AbsTaskSTS` or `AbsTaskRetrieval` and override `load_data`. Required `TaskMetadata` fields: `name`, `description`, `type`, `eval_langs`, `eval_splits`, `main_score`, `dataset={"path": ..., "revision": ...}`.
 - `revision` in a local `meta.yaml` is the result-cache key. Bump it whenever the data files change, or stale scores will be reused.
 - Retrieval `self.dataset` is nested `{subset: {split: RetrievalSplitData(...)}}`. STS `self.dataset` is a `DatasetDict` keyed by split only.

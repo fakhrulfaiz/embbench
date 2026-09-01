@@ -389,6 +389,11 @@ def check_model(hf_name: str) -> None:
             "create_causal_mask fix in core/encoders.py."
         )
 
+    console.print(
+        "To score a model already served by vLLM, use [bold]loader: openai_api[/bold] "
+        "instead of loading weights in this process. See docs/adding-models.md."
+    )
+
     _print_model_yaml(
         hf_name,
         loader="mteb",

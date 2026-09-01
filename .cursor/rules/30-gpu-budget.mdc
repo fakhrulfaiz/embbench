@@ -9,6 +9,7 @@ alwaysApply: false
 Never more than one embedding model resident on the GPU.
 
 - Orchestrator (`run --all`) spawns **one subprocess per model** and waits for exit before the next. Do not load a second model in the same process to compare embeddings.
+- `loader: openai_api` does not load weights in this process. The vLLM (or other) embeddings server owns the GPU. Do not run a local `mteb` / `sentence_transformers` job on the same card while that server is up.
 - Inside a process, tasks run sequentially. Call `torch.cuda.reset_peak_memory_stats()` before each task and `torch.cuda.empty_cache()` after.
 - Use fp16 (`dtype: float16` in `configs/models.yaml`). Honor `max_seq_length` and `batch_size` from the model config.
 - Do not run two evals concurrently. Do not start the API worker alongside a CLI run that uses the GPU.
