@@ -11,6 +11,8 @@ __pycache__/
 results/*
 !results/.gitkeep
 
+logs/
+
 .mteb/
 *.log
 .DS_Store
@@ -18,3 +20,6 @@ qdrant_storage/
 .ipynb_checkpoints/
 dist/
 build/
+
+# Generated SOP dumps stay local.
+data/retrieval/sop-handbook-*/

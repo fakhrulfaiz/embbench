@@ -67,10 +67,35 @@ def test_openai_api_passes_instruction_template(monkeypatch):
         endpoint_url="http://127.0.0.1:8000",
         use_instructions=True,
         instruction_template="Instruct: {instruction}\nQuery: ",
+        apply_instruction_to_documents=False,
     )
     load_encoder(cfg)
     assert captured["use_instructions"] is True
     assert "{instruction}" in captured["instruction_template"]
+    assert captured["apply_instruction_to_documents"] is False
+    assert captured["prompt_dict"] == {}
+
+
+def test_voyage_openai_api_uses_query_and_document_prefixes(monkeypatch):
+    captured: dict = {}
+    _patch_openai(monkeypatch, captured)
+
+    cfg = ModelConfig(
+        id="voyage-4-nano",
+        hf_name="voyageai/voyage-4-nano",
+        role="candidate",
+        loader="openai_api",
+        endpoint_url="http://127.0.0.1:8001",
+        use_instructions=True,
+        instruction_template="{instruction}",
+        apply_instruction_to_documents=True,
+    )
+    load_encoder(cfg)
+    fn = captured["instruction_template"]
+    assert callable(fn)
+    assert fn("ignored").startswith("Represent the query")
+    assert fn("ignored", "document").startswith("Represent the document")
+    assert captured["apply_instruction_to_documents"] is True
 
 
 def test_openai_api_uses_settings_url_when_endpoint_omitted(monkeypatch):

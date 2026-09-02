@@ -9,9 +9,10 @@ Scoring is exact in-memory search. Qdrant is only for serving-path numbers (p95 
 ```bash
 cp .env.example .env
 uv sync
+bash ./launch.sh
 ```
 
-`.env` pins HuggingFace caches to `/mnt/c/ml-cache/huggingface`. The process refuses to start if `HF_HOME` is not under `/mnt/c`.
+`.env` sets HuggingFace cache (`HF_HOME`). On this Linux host that is `~/.cache/huggingface`. The old `/mnt/c/...` path was WSL-only.
 
 Optional, for serving-path metrics:
 
@@ -66,7 +67,7 @@ It is read-only. It renders what a run already wrote to `results/` and never re-
 
 | Page | What it answers |
 |---|---|
-| Overview | Which model wins per language, by how much against the current production baseline, and what failed |
+| Overview | Which model wins per language on the metric and cut-off you pick, by how much against the current production baseline, and what failed |
 | Retrieval | nDCG and Recall at k, per task, as absolute scores or as a gap vs baseline |
 | Similarity | The same for STS, including which languages MTEB has no dataset for |
 | Metric explorer | The full MTEB metric family at every cut-off. The k-sweep shows whether a weak nDCG@10 is a ranking problem a reranker could fix or a recall miss it cannot |
@@ -77,7 +78,7 @@ Prediction files run to hundreds of megabytes per model, so the drill-down lists
 
 ## Add a dataset
 
-Drop a folder into `data/`. The harness wraps it as an MTEB task and scores it exactly like public FiQA or STSBenchmark. No Python edits, no `configs/tasks.yaml` change. Generation-service Postgres (documents, chunks, questions, STS pairs): [docs/dataset-store.md](docs/dataset-store.md).
+Drop a folder into `data/`. The harness wraps it as an MTEB task and scores it exactly like public FiQA or STSBenchmark. No Python edits, no `configs/tasks.yaml` change. Generate questions/pairs from Postgres with [`launch.sh`](launch.sh) (`src/embbench/generation/`). Schema: [docs/dataset-store.md](docs/dataset-store.md).
 
 | Kind | Folder | Files | Measures |
 |---|---|---|---|
@@ -119,7 +120,7 @@ It reports whether MTEB has the model registered and prints a ready-to-use confi
 
 This is not cosmetic. Instruction-aware models (Voyage, Harrier, Qwen3) are trained with a prefix on queries and documents. MTEB's wrapper applies them; a plain `encode()` does not, and reports a score below the model's real quality. `check-model` also warns about the two traps we hit: a vendor API extra that local weights do not need, and Hub code written for an older Transformers.
 
-vLLM pooling: [docs/adding-models.md](docs/adding-models.md#7-serve-with-vllm-loader-openai_api).
+vLLM pooling: [docs/adding-models.md](docs/adding-models.md#7-serve-with-vllm-loader-openai_api). Per-model dtype, pooling, and serve flags (and what to do when a model stalls mid-corpus): [docs/adding-models.md](docs/adding-models.md#8-per-model-parameters).
 
 Then smoke it on one task before committing to the full run:
 
@@ -129,7 +130,7 @@ uv run embbench run --model multilingual-e5-large \
   --no-include-mteb --task-names SciFact
 ```
 
-Field reference, `trust_remote_code`, and fitting an 8GB card: [docs/adding-models.md](docs/adding-models.md).
+Field reference, `trust_remote_code`, per-model serve flags, and fitting an 8GB card: [docs/adding-models.md](docs/adding-models.md).
 
 ## Architecture
 
@@ -154,12 +155,14 @@ uv run uvicorn embbench.api.main:app --port 8000
 
 ## Models
 
-| id | role |
-|---|---|
-| bce-embedding-base_v1 | baseline |
-| voyage-4-nano | predicted winner |
-| harrier-oss-v1-0.6b | backup |
-| Qwen3-Embedding-0.6B | popular reference |
-| bge-m3 | dense-only hybrid check |
+| id | role | why it is in the set |
+|---|---|---|
+| bce-embedding-base_v1 | baseline | current production model; every delta is measured against it |
+| voyage-4-nano | candidate | smallest and fastest of the group |
+| harrier-oss-v1-0.6b | candidate | decoder-backbone embedder, instruction-aware |
+| Qwen3-Embedding-0.6B | candidate | widely used default worth checking against |
+| bge-m3 | candidate | dense-only here; hybrid (sparse + ColBERT) is a later check |
+
+`role` only decides which model is the incumbent. `baseline` is the one value the code acts on, so exactly one model should carry it and everything else is a `candidate`. Reasons for including a model belong in its `description`, not in the role.
 
 Malay STS does not exist in MTEB. The run logs that gap until you drop a folder into `data/sts/`.

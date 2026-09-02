@@ -1,0 +1,12 @@
+---
+description: Do not auto-run tests, installs, or Docker. Ask the user to review first.
+alwaysApply: true
+---
+
+# Review before running
+
+Do not run tests, installs, Docker builds, compose up/down, generation jobs, or other commands that change machine state or spend GPU/CPU time unless the user explicitly asks to run them.
+
+After editing, stop and ask the user to review. List the commands you would run. Wait for approval.
+
+Read-only inspection of existing files is fine. `uv sync`, `pytest`, `docker compose`, `gensvc generate`, and similar are not.

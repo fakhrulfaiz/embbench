@@ -48,7 +48,7 @@ def load_encoder(config: ModelConfig) -> Encoder:
 ```yaml
   - id: multilingual-e5-large
     hf_name: intfloat/multilingual-e5-large
-    role: candidate
+    role: candidate  # omit it; candidate is the default
     loader: mteb
     trust_remote_code: false
     use_instructions: true
@@ -60,10 +60,12 @@ def load_encoder(config: ModelConfig) -> Encoder:
 | Field | Notes |
 |---|---|
 | `id` | What you pass to `--model` and what appears in every report |
-| `role` | Free text. `baseline` is special: the dashboard measures every other model against it, so exactly one model should carry it |
+| `role` | `baseline` for the incumbent (exactly one), `candidate` for everything else. Defaults to `candidate`. It is the only field the delta maths reads; put the reason you added the model in `description` |
 | `loader` | `mteb`, `sentence_transformers`, or `openai_api` |
 | `endpoint_url` | `openai_api` only. Defaults to `EMBBENCH_EMBEDDINGS_URL` |
 | `use_chat_template` | `openai_api` only. `false` for pooling models with no chat template (bge-m3, BCE). `true` only for chat/VLM embedders |
+| `instruction_template` | Prefix applied to queries, e.g. `Instruct: {instruction}\nQuery: `. Pair with `apply_instruction_to_documents` |
+| `apply_instruction_to_documents` | `false` for Qwen3/Harrier (queries only), `true` for Voyage (both sides) |
 | `trust_remote_code` | Required if the repo ships its own modeling `.py` (local loaders) |
 | `use_instructions` | Documentation only; the wrapper decides the actual prompting |
 | `batch_size` | Lower this first when you hit OOM |
@@ -153,6 +155,8 @@ vllm serve BAAI/bge-m3 --runner pooling --port 8000
 
 `hf_name` is the model id the server advertises (`/v1/models`). Pin `--max-model-len` (or equivalent) to 512 on the server so truncation matches the local runs.
 
+vLLM `/v1/embeddings` has no query vs document route. Prefixes belong on the client (`OpenAIAPIEncodeWrapper`): Qwen/Harrier use `Instruct: {instruction}\nQuery: ` on queries only; Voyage uses the two “Represent the …” prefixes. BCE and dense bge-m3 take the raw text.
+
 Do not add this row to a `--model all` run that also loads Voyage/Harrier in-process on the same GPU. Run the vLLM model alone:
 
 ```bash
@@ -162,11 +166,126 @@ uv run embbench run \
   --no-include-mteb --task-names SciFact
 ```
 
-Plain pooling embedders (BCE, bge-m3) match local `encode()`. Instruction models (Voyage, Harrier, Qwen3) need query vs document prefixes; a raw `/v1/embeddings` call will not apply MTEB's local wrapper. Set `instruction_template` (must contain `{instruction}`) and `use_instructions: true` only if the served model expects that template. Otherwise prefer `loader: mteb` in-process for those three.
+Plain pooling embedders (BCE, bge-m3) match local `encode()`. Instruction models still need prefixes on the HTTP client (`instruction_template`, and `apply_instruction_to_documents: false` for Qwen/Harrier). Voyage’s query/document strings are applied in `encoders.py`.
 
 `--profile-ops` still expects a local `encode(list[str])`. HTTP models may skip or fail that step; nDCG still comes from `mteb.evaluate`.
 
-## 8. Fitting an 8GB card
+For the managed path (`launch.sh` option 3), you do not run `vllm serve` by hand. Serve flags per model live in `set_embed_flags()`; see the next section.
+
+## 8. Per-model parameters
+
+Every model needs two sets of parameters, and they live in different files:
+
+| Layer | File | Controls |
+|---|---|---|
+| Client | `configs/models.yaml`, one entry per `id` | How embbench calls the server: batch size, query/document prefixes, sequence length, endpoint |
+| Server | `set_embed_flags()` in [`launch.sh`](../launch.sh) | How vLLM loads the weights: dtype, pooling, CUDA graphs, prefix caching, token budget |
+
+The server layer flows through env vars, not command-line arguments:
+
+```
+launch.sh set_embed_flags()  →  EMBED_* env  →  docker-compose.yml (embed)  →  embed-serve.sh  →  vllm serve
+```
+
+`embed-serve.sh` is bind-mounted into the container, so changing a flag needs a container recreate, never an image rebuild.
+
+### Server knobs
+
+Set these per model. Defaults are assigned above the `case`, so a branch only lists what differs.
+
+| Env var | vLLM flag | Default | Set it when |
+|---|---|---|---|
+| `EMBED_DTYPE` | `--dtype` | `float16` | Qwen3-family weights ship bf16; use `bfloat16` |
+| `EMBED_POOLER_CONFIG` | `--pooler-config` | `{"pooling_type":"CLS"}` | `LAST` for causal decoders, `MEAN` for Voyage, `CLS` for BERT-style |
+| `EMBED_CONVERT` | `--convert` | `embed` | Rarely; `embed` is what pooling retrieval needs |
+| `EMBED_HF_OVERRIDES` | `--hf-overrides` | unset | The repo's `config.json` names an architecture vLLM should not use |
+| `EMBED_ENFORCE_EAGER` | `--enforce-eager` | `0` | The model misbehaves under `torch.compile` / CUDA graphs |
+| `EMBED_PREFIX_CACHE` | `--no-enable-prefix-caching` when `0` | `1` | Causal pooling model stalls mid-corpus (see below) |
+| `EMBED_MAX_BATCHED_TOKENS` | `--max-num-batched-tokens` | unset (vLLM decides) | A pooling request must not be split across scheduler steps |
+
+These are shared by every model and come from `.env`, so do not put them in a branch:
+
+| Env var | Meaning |
+|---|---|
+| `EMBED_PORT` | Host port for the pooling server (`8001`) |
+| `EMBED_MAX_LEN` | `--max-model-len`, pinned to 512 so all models truncate alike |
+| `EMBED_MAX_REQ` | `--max-num-seqs`, concurrent sequences in the engine |
+| `EMBED_GPU_MEMORY` | `--gpu-memory-utilization`, a **fraction of the whole card** |
+| `EMBED_HF_CACHE` | Host Hugging Face cache, mounted so weights download once |
+
+`EMBED_GPU_MEMORY` is the usual source of "why is a 0.6B model using 10 GB". At `0.6` on a 16 GB card, vLLM reserves ~9.8 GB up front as a KV/activation pool regardless of weight size. Lower it if you want the embedder to sit lighter; it is not a measure of the model.
+
+### Adding a preset
+
+Add a branch keyed on the `id` from `configs/models.yaml`:
+
+```bash
+        my-new-embedder)
+            EMBED_DTYPE=bfloat16
+            EMBED_POOLER_CONFIG='{"pooling_type":"LAST"}'
+            ;;
+```
+
+An id with no branch still runs; `launch.sh` prints `No vLLM pooling preset for '<id>'; using CLS float16.` That default is wrong for any instruction-tuned decoder, so treat the message as a prompt to add a branch.
+
+Current presets:
+
+| id | dtype | pooling | Other |
+|---|---|---|---|
+| bce-embedding-base_v1 | float16 | CLS | — |
+| bge-m3 | float16 | CLS | dense only; no sparse/ColBERT override |
+| voyage-4-nano | bfloat16 | MEAN | eager; `--hf-overrides` to the bidirectional architecture |
+| harrier-oss-v1-0.6b | bfloat16 | LAST | prefix caching off; batched-token budget pinned |
+| Qwen3-Embedding-0.6B | bfloat16 | LAST | prefix caching off; batched-token budget pinned |
+
+### Check what actually got served
+
+`launch.sh` echoes the resolved flags before starting the container:
+
+```
+embed flags: dtype=bfloat16 pooler={"pooling_type":"LAST"} eager=0 prefix_cache=0 max_batched_tokens=4096
+```
+
+Confirm the server agrees, since a stale container keeps its old flags:
+
+```bash
+curl -s http://127.0.0.1:8001/v1/models
+docker logs embbench-embed-1 2>&1 | grep 'non-default args'
+```
+
+### Worked example: a model that stalls mid-corpus
+
+Harrier encoded 204 query batches at 25 it/s, then documents crawled to a 4h45m ETA with `Request timeout (attempt 1/3)` from MTEB every five minutes. It was not slow compute:
+
+```
+Avg prompt throughput: 13791.4 tokens/s, Running: 1 reqs   ← healthy
+Avg prompt throughput:     0.0 tokens/s, Running: 1 reqs   ← wedged, GPU at 0%
+```
+
+One request sat in the engine with the GPU idle, and only the client timeout cleared it. Queries (~40 tokens) never stalled; documents (~430 tokens) always did.
+
+Only Harrier and Qwen3 are exposed, and vLLM's own gating explains why. `ModelConfig.is_prefix_caching_supported` (and the identical `is_chunked_prefill_supported`) turn both features **off** for bidirectional attention, and also off for causal models pooling with `MEAN`, `CLS`, or `STEP`. Causal attention plus `LAST` pooling is the one combination that leaves them **on**:
+
+| id | Architecture | Attention | Pooling | Prefix caching + chunked prefill |
+|---|---|---|---|---|
+| bce-embedding-base_v1 | `XLMRobertaModel` | encoder_only | CLS | off |
+| bge-m3 | `XLMRobertaModel` | encoder_only | CLS | off |
+| voyage-4-nano | overridden to `VoyageQwen3BidirectionalEmbedModel` | encoder_only | MEAN | off |
+| harrier-oss-v1-0.6b | `Qwen3Model` | decoder | LAST | **on** |
+| Qwen3-Embedding-0.6B | `Qwen3ForCausalLM` | decoder | LAST | **on** |
+
+A long `LAST`-pooling request that gets split across scheduler steps has no way to emit its vector, which matches the wedge exactly. Any future decoder-backbone embedder with `LAST` pooling lands in that same cell, so give it these two knobs from the start.
+
+The fix was two server knobs, no change to the embedding recipe:
+
+```bash
+EMBED_PREFIX_CACHE=0
+EMBED_MAX_BATCHED_TOKENS=$((EMBED_MAX_REQ * EMBED_MAX_LEN))
+```
+
+The budget equals the engine's concurrent prefill capacity, so no single request can be chunked. Reach for `--enforce-eager` only if a stall survives both, and confirm it with the logs above rather than assuming CUDA graphs.
+
+## 9. Fitting an 8GB card
 
 One model per subprocess, so only one set of weights is resident at a time. When a model still will not fit:
 
@@ -191,3 +310,7 @@ A job that dies with CUDA OOM is recorded as `failed` and the orchestrator conti
 | `openai_api` connection refused | vLLM is not up, or `endpoint_url` / `EMBBENCH_EMBEDDINGS_URL` is wrong |
 | vLLM 400 about chat template | Set `use_chat_template: false` for non-chat pooling models |
 | Model skipped on `run --model all` | It already completed at this scope; pass `--force` |
+| `No vLLM pooling preset for '<id>'` | No branch in `set_embed_flags()`; CLS float16 is being guessed. See section 8 |
+| Encoding stalls mid-corpus, GPU 0%, MTEB `Request timeout` | Causal pooling model with prefix caching on; set `EMBED_PREFIX_CACHE=0` and pin the token budget. See section 8 |
+| VRAM far larger than the weights | `EMBED_GPU_MEMORY` is a fraction of the whole card, not the model size |
+| Serve flag edit had no effect | Container still running the old flags; recreate it and re-check `non-default args` |

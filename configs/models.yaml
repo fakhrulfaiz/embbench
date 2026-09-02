@@ -5,7 +5,9 @@ models:
   - id: bce-embedding-base_v1
     hf_name: maidalun1020/bce-embedding-base_v1
     role: baseline
-    loader: sentence_transformers
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8001
+    use_chat_template: false
     trust_remote_code: false
     use_instructions: false
     max_seq_length: 512
@@ -14,38 +16,52 @@ models:
 
   - id: voyage-4-nano
     hf_name: voyageai/voyage-4-nano
-    role: predicted-winner
-    loader: mteb
+    role: candidate
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8001
+    use_chat_template: false
     trust_remote_code: true
     use_instructions: true
+    instruction_template: "{instruction}"
+    apply_instruction_to_documents: true
     max_seq_length: 512
     batch_size: 16
     description: Best Bitext and Retrieval scores, smallest and fastest model.
 
   - id: harrier-oss-v1-0.6b
     hf_name: microsoft/harrier-oss-v1-0.6b
-    role: backup
-    loader: mteb
+    role: candidate
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8001
+    use_chat_template: false
     trust_remote_code: false
     use_instructions: true
+    instruction_template: "Instruct: {instruction}\nQuery: "
+    apply_instruction_to_documents: false
     max_seq_length: 512
     batch_size: 16
     description: Balanced scores. Safer pick if voyage Malay support is weak.
 
   - id: Qwen3-Embedding-0.6B
     hf_name: Qwen/Qwen3-Embedding-0.6B
-    role: reference
-    loader: mteb
+    role: candidate
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8001
+    use_chat_template: false
     trust_remote_code: false
     use_instructions: true
+    instruction_template: "Instruct: {instruction}\nQuery: "
+    apply_instruction_to_documents: false
     max_seq_length: 512
     batch_size: 16
     description: Widely used default. Checks if the popular pick is good enough.
 
   - id: bge-m3
     hf_name: BAAI/bge-m3
-    role: hybrid-check
-    loader: sentence_transformers
+    role: candidate
+    loader: openai_api
+    endpoint_url: http://127.0.0.1:8001
+    use_chat_template: false
     trust_remote_code: false
     use_instructions: false
     max_seq_length: 512

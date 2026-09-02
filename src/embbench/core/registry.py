@@ -14,7 +14,9 @@ from embbench.core.config import get_settings
 class ModelConfig(BaseModel):
     id: str
     hf_name: str
-    role: str
+    # Only "baseline" carries meaning: it is the incumbent every delta is measured
+    # against, so exactly one model should have it. Everything else is a candidate.
+    role: str = "candidate"
     loader: Literal["mteb", "sentence_transformers", "openai_api"] = "sentence_transformers"
     trust_remote_code: bool = False
     use_instructions: bool = False
@@ -26,6 +28,8 @@ class ModelConfig(BaseModel):
     api_key: str | None = None
     use_chat_template: bool = False
     instruction_template: str | None = None
+    apply_instruction_to_documents: bool = True
+    prompt_dict: dict[str, str] | None = None
 
 
 class ModelsFile(BaseModel):

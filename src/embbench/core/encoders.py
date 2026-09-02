@@ -79,6 +79,14 @@ def _openai_wrapper_cls():
     return OpenAIAPIEncodeWrapper
 
 
+def _voyage_instruction_template(instruction: str, prompt_type: Any = None) -> str:
+    """Voyage has no /v1 query vs document endpoint; prepend the card prefixes here."""
+    name = getattr(prompt_type, "value", prompt_type)
+    if name in ("document", "passage"):
+        return "Represent the document for retrieval: "
+    return "Represent the query for retrieving supporting documents: "
+
+
 def _load_openai_api_model(config: ModelConfig):
     """HTTP client to a pooling server. Weights stay in vLLM (or the remote API)."""
     settings = get_settings()
@@ -92,9 +100,15 @@ def _load_openai_api_model(config: ModelConfig):
         "use_chat_template": config.use_chat_template,
         "modalities": ["text"],
     }
-    if config.use_instructions and config.instruction_template:
+    if config.use_instructions:
         kwargs["use_instructions"] = True
-        kwargs["instruction_template"] = config.instruction_template
+        # Wrapper only applies instructions when prompt_dict is not None.
+        kwargs["prompt_dict"] = config.prompt_dict or {}
+        kwargs["apply_instruction_to_documents"] = config.apply_instruction_to_documents
+        if config.id == "voyage-4-nano" or config.hf_name.startswith("voyageai/"):
+            kwargs["instruction_template"] = _voyage_instruction_template
+        elif config.instruction_template:
+            kwargs["instruction_template"] = config.instruction_template
     return _openai_wrapper_cls()(**kwargs)
 
 

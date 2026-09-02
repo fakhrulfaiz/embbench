@@ -1,0 +1,2 @@
+# CUDA 13.0 vLLM (vllm/vllm-openai:v0.25.1).
+FROM vllm/vllm-openai:v0.25.1

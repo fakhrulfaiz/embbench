@@ -2,7 +2,7 @@
 
 Drop a folder into `data/`. The harness wraps it as an MTEB task and scores it the same way as public FiQA / STSBenchmark. No Python adapter, no `configs/tasks.yaml` edit.
 
-Chunks and questions are stored in the generation-service database and exported into this layout. Schema: [dataset-store.md](dataset-store.md).
+Chunks and questions are stored in Postgres and exported into this layout by `src/embbench/generation/`. Schema: [dataset-store.md](dataset-store.md).
 
 Two kinds of local task:
 

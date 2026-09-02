@@ -1,3 +1,7 @@
+# Chat vLLM (:8000, profile chat) and pooling embed (:8001, profile embed)
+# share GPU 0. launch.sh never starts both. Qdrant is optional serving-path metrics.
+name: embbench
+
 services:
   qdrant:
     image: qdrant/qdrant:v1.13.4
@@ -8,7 +12,7 @@ services:
       - ./qdrant_storage:/qdrant/storage
     restart: unless-stopped
 
-  # Phase 2 profile. Not used in the CLI-only phase.
+  # Phase 2 profile. Not used in the CLI-only phase. Port 8000 clashes with chat vLLM.
   api:
     profiles: ["api"]
     build: .
@@ -29,3 +33,81 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  vllm:
+    profiles: ["chat"]
+    build:
+      context: .
+      dockerfile: Dockerfile.cu130
+    image: gensvc-vllm:cu130
+    ports:
+      - "${LLM_PORT:-8000}:8000"
+    volumes:
+      - ${LLM_PATH}:/models
+    command:
+      - "--model"
+      - "/models"
+      - "--port"
+      - "8000"
+      - "--gpu-memory-utilization"
+      - "${LLM_GPU_MEMORY:-0.75}"
+      - "--max-model-len"
+      - "${LLM_MAX_SEQ_LEN:-4096}"
+      - "--served-model-name"
+      - "${LLM_MODEL}"
+      - "--max-num-seqs"
+      - "${LLM_MAX_REQ:-5}"
+      - "--trust-remote-code"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${LLM_GPU_NO:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 50s
+      retries: 10
+      start_period: 200s
+    restart: unless-stopped
+
+  embed:
+    profiles: ["embed"]
+    image: gensvc-vllm:cu130
+    ipc: host
+    ports:
+      - "${EMBED_PORT:-8001}:8000"
+    volumes:
+      - ${EMBED_PATH:-/usr/local/models/bce-embedding-base_v1}:/models:ro
+      - ${EMBED_HF_CACHE:-/home/phison/.cache/huggingface}:/root/.cache/huggingface
+      - ./embed-serve.sh:/embed-serve.sh:ro
+    environment:
+      EMBED_SERVE: ${EMBED_SERVE:-/models}
+      EMBED_NAME: ${EMBED_NAME:-maidalun1020/bce-embedding-base_v1}
+      EMBED_MAX_LEN: ${EMBED_MAX_LEN:-512}
+      EMBED_GPU_MEMORY: ${EMBED_GPU_MEMORY:-0.6}
+      EMBED_MAX_REQ: ${EMBED_MAX_REQ:-8}
+      EMBED_DTYPE: ${EMBED_DTYPE:-float16}
+      EMBED_CONVERT: ${EMBED_CONVERT:-embed}
+      EMBED_POOLER_CONFIG: ${EMBED_POOLER_CONFIG:-}
+      EMBED_HF_OVERRIDES: ${EMBED_HF_OVERRIDES:-}
+      EMBED_ENFORCE_EAGER: ${EMBED_ENFORCE_EAGER:-0}
+      EMBED_PREFIX_CACHE: ${EMBED_PREFIX_CACHE:-1}
+      EMBED_MAX_BATCHED_TOKENS: ${EMBED_MAX_BATCHED_TOKENS:-}
+    entrypoint: ["/bin/bash", "/embed-serve.sh"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${LLM_GPU_NO:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 50s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped

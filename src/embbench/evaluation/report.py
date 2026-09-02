@@ -5,7 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from embbench.core.config import get_settings
+from embbench.core.registry import get_model_config
 from embbench.core.schemas import JobResult
+
+
+def _role(model_id: str) -> str:
+    """Role comes from configs/models.yaml, so a new entry never needs a code edit."""
+    try:
+        return get_model_config(model_id).role
+    except (KeyError, OSError):
+        return "—"
 
 
 def collect_results(
@@ -69,18 +78,11 @@ def _jobs_section(results: list[JobResult]) -> list[str]:
         "| model | role | status | tasks | peak VRAM GiB |",
         "|---|---|---|---|---|",
     ]
-    roles = {
-        "bce-embedding-base_v1": "baseline",
-        "voyage-4-nano": "predicted winner",
-        "harrier-oss-v1-0.6b": "backup",
-        "Qwen3-Embedding-0.6B": "reference",
-        "bge-m3": "hybrid-check",
-    }
     for res in results:
         peaks = [t.peak_vram_gb for t in res.tasks if t.peak_vram_gb is not None]
         peak = max(peaks) if peaks else (res.ops.peak_vram_gb if res.ops else None)
         lines.append(
-            f"| `{res.spec.model_id}` | {roles.get(res.spec.model_id, '—')} | "
+            f"| `{res.spec.model_id}` | {_role(res.spec.model_id)} | "
             f"{res.status} | {len(res.tasks)} | {_fmt(peak)} |"
         )
     lines.append("")

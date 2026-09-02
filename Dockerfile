@@ -8,7 +8,7 @@ COPY configs ./configs
 
 RUN pip install --no-cache-dir .
 
-ENV HF_HOME=/mnt/c/ml-cache/huggingface
+ENV HF_HOME=/root/.cache/huggingface
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000

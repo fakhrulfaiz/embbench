@@ -278,6 +278,28 @@ def language_means(
     return grouped
 
 
+def overall_means(frame: pd.DataFrame, *, k: int | None = None) -> pd.DataFrame:
+    """One row per model: nDCG and Recall, each the unweighted mean of language means.
+
+    Languages count equally even when one has fewer tasks, so a small Chinese set
+    does not get drowned by English.
+    """
+    ndcg = language_means(frame, "ndcg", k=k)
+    recall = language_means(frame, "recall", k=k)
+    if ndcg.empty and recall.empty:
+        return pd.DataFrame()
+    parts: list[pd.DataFrame] = []
+    if not ndcg.empty:
+        parts.append(
+            ndcg.groupby("model", observed=True)["ndcg"].mean().rename("ndcg").to_frame()
+        )
+    if not recall.empty:
+        parts.append(
+            recall.groupby("model", observed=True)["recall"].mean().rename("recall").to_frame()
+        )
+    return pd.concat(parts, axis=1).reset_index()
+
+
 def add_baseline_delta(
     frame: pd.DataFrame,
     value_col: str,

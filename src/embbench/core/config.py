@@ -1,7 +1,10 @@
-"""Settings and the /mnt/c HuggingFace cache guard.
+"""Settings and HuggingFace cache bootstrap.
 
 Import and call `bootstrap_env()` before any `torch` / `transformers` /
-`huggingface_hub` / `mteb` import so Hub traffic cannot land on WSL ext4.
+`huggingface_hub` / `mteb` import.
+
+On WSL, Hub files must live under `/mnt/c` (Windows drive), not ext4.
+On native Linux, the default is `~/.cache/huggingface`.
 """
 
 from __future__ import annotations
@@ -14,35 +17,47 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-REQUIRED_HF_PREFIX = "/mnt/c"
+WSL_HF_PREFIX = "/mnt/c"
+
+
+def _on_wsl_windows_drive() -> bool:
+    root = Path(WSL_HF_PREFIX)
+    try:
+        return root.is_dir() and os.access(root, os.W_OK)
+    except OSError:
+        return False
 
 
 def bootstrap_env(repo_root: Path | None = None) -> Path:
-    """Load `.env`, force HF cache onto /mnt/c, and refuse to continue otherwise."""
+    """Load `.env`, set HF cache (WSL `/mnt/c` or Linux `~/.cache`), create dirs."""
     root = repo_root or REPO_ROOT
     load_dotenv(root / ".env", override=False)
 
+    if _on_wsl_windows_drive():
+        hf_home = "/mnt/c/ml-cache/huggingface"
+    else:
+        hf_home = str(Path.home() / ".cache" / "huggingface")
+
     defaults = {
-        "HF_HOME": "/mnt/c/ml-cache/huggingface",
-        "HF_HUB_CACHE": "/mnt/c/ml-cache/huggingface/hub",
-        "HF_DATASETS_CACHE": "/mnt/c/ml-cache/huggingface/datasets",
+        "HF_HOME": hf_home,
+        "HF_HUB_CACHE": f"{hf_home}/hub",
+        "HF_DATASETS_CACHE": f"{hf_home}/datasets",
         "HF_HUB_DISABLE_SYMLINKS_WARNING": "1",
         "MTEB_CACHE": str(root / "results" / "mteb-cache"),
         "EMBBENCH_RESULTS_DIR": str(root / "results"),
         "EMBBENCH_DATA_DIR": str(root / "data"),
         "EMBBENCH_CONFIGS_DIR": str(root / "configs"),
+        "EMBBENCH_EMBEDDINGS_URL": "http://127.0.0.1:8001",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, value)
 
-    hf_home = Path(os.environ["HF_HOME"]).expanduser()
-    # Do not resolve() through /mnt/c symlinks in a way that leaves the prefix.
-    hf_home_str = os.path.normpath(str(hf_home))
-    if not hf_home_str.startswith(REQUIRED_HF_PREFIX):
+    hf_home_str = os.path.normpath(str(Path(os.environ["HF_HOME"]).expanduser()))
+    if _on_wsl_windows_drive() and not hf_home_str.startswith(WSL_HF_PREFIX):
         raise RuntimeError(
-            f"HF_HOME must live under {REQUIRED_HF_PREFIX} so Hub files land on "
+            f"HF_HOME must live under {WSL_HF_PREFIX} so Hub files land on "
             f"the Windows drive, not WSL ext4. Got {hf_home_str!r}. "
-            "Fix .env (see .env.example) and do not point HF_HOME at ~/.cache."
+            "Fix .env (see .env.example)."
         )
 
     Path(os.environ["HF_HOME"]).mkdir(parents=True, exist_ok=True)
@@ -68,7 +83,7 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="http://127.0.0.1:6333", alias="QDRANT_URL")
     qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
     embeddings_url: str = Field(
-        default="http://127.0.0.1:8000", alias="EMBBENCH_EMBEDDINGS_URL"
+        default="http://127.0.0.1:8001", alias="EMBBENCH_EMBEDDINGS_URL"
     )
     embeddings_api_key: str | None = Field(default=None, alias="EMBBENCH_EMBEDDINGS_API_KEY")
     results_dir: Path = Field(alias="EMBBENCH_RESULTS_DIR")

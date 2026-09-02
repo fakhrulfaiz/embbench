@@ -25,8 +25,11 @@ from embbench.datasets.local_source import LocalSource
 from embbench.datasets.mteb_source import MtebSource
 from embbench.evaluation.report import render_report, write_report
 from embbench.evaluation.runner import run_job
+from embbench.generation.cli import retrieval_app, sts_app
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(retrieval_app, name="retrieval")
+app.add_typer(sts_app, name="sts")
 console = Console()
 logger = logging.getLogger("embbench")
 
@@ -495,8 +498,6 @@ def smoke() -> None:
     console.print(f"status={result.status} hf_home={settings.hf_home}")
     if result.status != "completed":
         raise typer.Exit(code=1)
-    if not str(settings.hf_home).startswith("/mnt/c"):
-        raise typer.Exit(code=2)
 
 
 def main() -> None:

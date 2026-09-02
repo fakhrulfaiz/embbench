@@ -32,16 +32,12 @@ def render() -> None:
 
 def _controls(frame: pd.DataFrame) -> tuple[str, int, str, pd.DataFrame]:
     cols = st.columns([1, 1, 1.4])
-    metric_label = cols[0].radio(
-        "Metric",
-        ["nDCG", "Recall"],
-        horizontal=True,
-        help="nDCG rewards ranking the right passage higher. Recall only asks if it appeared.",
+    metric, k = ui.metric_selector(
+        frame,
+        key="retrieval",
+        metric_container=cols[0],
+        k_container=cols[1],
     )
-    metric = "ndcg" if metric_label == "nDCG" else "recall"
-
-    ks = sorted(int(v) for v in frame["k"].unique())
-    k = cols[1].radio("Cut-off k", ks, horizontal=True, help="Top-k passages considered.")
 
     view = cols[2].radio(
         "Show",
@@ -72,7 +68,7 @@ def _controls(frame: pd.DataFrame) -> tuple[str, int, str, pd.DataFrame]:
 
 
 def _by_language(frame: pd.DataFrame, metric: str, k: int, view: str) -> None:
-    st.subheader(f"{metric.upper()}@{k} by language")
+    st.subheader(f"{ui.metric_title(metric, k)} by language")
     means = frames.language_means(frame, metric, k=k)
     if means.empty:
         ui.empty_state("Nothing to average for this metric.")
@@ -86,20 +82,20 @@ def _by_language(frame: pd.DataFrame, metric: str, k: int, view: str) -> None:
             value_col=metric,
             group_col="Language",
             group_title="Language",
-            value_title=f"Mean {metric.upper()}@{k}",
+            value_title=f"Mean {ui.metric_title(metric, k)}",
         )
     else:
         chart = ui.delta_bar(
             data,
             group_col="Language",
             group_title="Language",
-            value_title=f"{metric.upper()}@{k} minus baseline",
+            value_title=f"{ui.metric_title(metric, k)} minus baseline",
         )
     st.altair_chart(chart, use_container_width=False)
 
 
 def _by_task(frame: pd.DataFrame, metric: str, k: int, view: str) -> None:
-    st.subheader(f"{metric.upper()}@{k} by task")
+    st.subheader(f"{ui.metric_title(metric, k)} by task")
     ui.metric_help(
         "Language averages hide per-dataset weakness. A model can win overall and still "
         "lose badly on one domain."
@@ -121,7 +117,7 @@ def _by_task(frame: pd.DataFrame, metric: str, k: int, view: str) -> None:
             value_col=metric,
             x_col="task",
             x_title="Task",
-            value_title=f"{metric.upper()}@{k}",
+            value_title=ui.metric_title(metric, k),
         )
     else:
         delta = frames.add_baseline_delta(pivot, metric, ["task"])
@@ -160,7 +156,7 @@ def _table(frame: pd.DataFrame, metric: str, k: int) -> None:
             "ndcg": st.column_config.NumberColumn(f"nDCG@{k}", format="%.4f"),
             "recall": st.column_config.NumberColumn(f"Recall@{k}", format="%.4f"),
             "delta": st.column_config.NumberColumn(
-                f"{metric.upper()}@{k} vs baseline", format="%+.4f"
+                f"{ui.metric_title(metric, k)} vs baseline", format="%+.4f"
             ),
             "elapsed_s": st.column_config.NumberColumn("Seconds", format="%.0f"),
         },
